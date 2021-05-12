@@ -2,11 +2,13 @@
 
 import argparse
 import inspect
+import json
 import os
 import re
 import smtplib
 import socket
 import sys
+import urllib.parse
 from email.mime.text import MIMEText
 from logging import debug, error, warning
 from typing import Any, Optional, Text, Dict, cast
@@ -22,8 +24,15 @@ CONFIG_ID = "actworkers"
 CONFIG_NAME = "actworkers.ini"
 
 
-class UnknownResult(Exception):
-    """UnknownResult is used in API request (not 200 result)"""
+class FetchError(Exception):
+    """UnsupportedScheme is used when parsing URLs that does not contain a supported scheme"""
+
+    def __init__(self, *args: Any) -> None:
+        Exception.__init__(self, *args)
+
+
+class UnsupportedScheme(Exception):
+    """UnsupportedScheme is used when parsing URLs that does not contain a supported scheme"""
 
     def __init__(self, *args: Any) -> None:
         Exception.__init__(self, *args)
@@ -198,10 +207,9 @@ def fatal(message: Text, exit_code: int = 1) -> None:
     error(message.strip())
     sys.exit(exit_code)
 
-
-def fetch_json(url: str, proxy_string: Optional[str], timeout: int = 60, verify_https: bool = False) -> Any:
-    """Fetch remote URL as JSON
-    url (string):                    URL to fetch
+def fetch(url: str, proxy_string: Optional[str], timeout: int = 60, verify_https: bool = False) -> Any:
+    """Fetch remote URL and return content
+    url (string):                    File or URL to fetch
     proxy_string (string, optional): Optional proxy string on format host:port
     timeout (int, optional):         Timeout value for query (default=60 seconds)
     """
@@ -218,6 +226,15 @@ def fetch_json(url: str, proxy_string: Optional[str], timeout: int = 60, verify_
         "params": {}
     }
 
+    parsed = urllib.parse.urlparse(url)
+
+    # No scheme - assume this is a file
+    if not parsed.scheme:
+        return open(url).read()
+
+    if not parsed.scheme.lower() in ("http", "https"):
+        raise UnsupportedScheme(f"Unsupported scheme in {url}")
+
     if not verify_https:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -226,13 +243,26 @@ def fetch_json(url: str, proxy_string: Optional[str], timeout: int = 60, verify_
     except (urllib3.exceptions.ReadTimeoutError,
             requests.exceptions.ReadTimeout,
             socket.timeout) as err:
-        error("Timeout ({0.__class__.__name__}), query: {1}".format(err, req.url))
+        raise FetchError("Timeout ({0.__class__.__name__}), query: {1}".format(err, url))
 
     if not req.status_code == 200:
         errmsg = "status_code: {0.status_code}: {0.content}"
-        raise UnknownResult(errmsg.format(req))
+        raise FetchError(errmsg.format(req))
 
-    return req.json()
+    return req.text
+
+
+def fetch_json(url: str, proxy_string: Optional[str], timeout: int = 60, verify_https: bool = False) -> Any:
+    """ Fetch remote URL or local and return content parse as json
+    url (string):                    File or URL to fetch
+    proxy_string (string, optional): Optional proxy string on format host:port
+    timeout (int, optional):         Timeout value for query (default=60 seconds)
+    """
+    content = fetch(url, proxy_string, timeout, verify_https)
+    try:
+        return json.loads(content)
+    except json.decoder.JSONDecodeError as e:
+        raise FetchError(f"Cannot parse as json {e}, {content} {url}")
 
 
 def sendmail(smtphost: str, sender: str, recipient: str, subject: str, body: str) -> None:
