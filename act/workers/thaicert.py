@@ -26,6 +26,7 @@ STIX_VOCAB = "http://raw.githubusercontent.com/oasis-open/cti-stix2-json-schemas
 COUNTRY_REGIONS = "https://raw.githubusercontent.com/lukes/ISO-3166-Countries-with-Regional-Codes/master/all/all.json"
 THAICERT_TOOLS_URL = "https://apt.thaicert.or.th/cgi-bin/getcard.cgi?t=all&o=j"
 
+
 def parseargs() -> argparse.ArgumentParser:
     """ Parse arguments"""
     parser = worker.parseargs("ThaiCERT worker")
@@ -39,22 +40,26 @@ def process(client: act.api.Act, ta_cards: List, output_format: Text = "json") -
 
     for actor in ta_cards:
         if len(actor["names"]) > 1:
-            aliases = list(set([alias["name"] for alias in actor["names"]]))
-            for a1, a2 in combinations(aliases, 2):
+            for alias in actor["names"][1:]:
                 try:
-                    ta1 = format_threat_actor(a1)
-                    ta2 = format_threat_actor(a2)
+                    ta_name = format_threat_actor(actor["names"][0]["name"])
+                    alias_name = format_threat_actor(alias["name"])
                 except ValidationError as e:
                     error(str(e))
                     continue
 
-                # Threat Actors might be identical after format/normalization
-                if ta1 == ta2:
+                # names might be identical after format/normalization
+                if ta_name == alias_name:
                     continue
+
                 handle_fact(
-                    client.fact("alias")
-                    .bidirectional("threatActor", ta1, "threatActor", ta2),
-                    output_format=output_format
+                    client.fact("alias").bidirectional(
+                        "threatActor",
+                        ta_name,
+                        "threatActor",
+                        alias_name
+                    ),
+                    output_format=output_format,
                 )
 
         if "operations" in actor:
@@ -164,7 +169,7 @@ def add_tools(client: act.api.Act, ta_cards: List, tools: List, output_format: T
     """
     tool_vocab = [tool["tool"] for tool in tools]
     for actor in ta_cards:
-       if "tools" in actor:
+        if "tools" in actor:
             for tool in actor["tools"]:
                 if tool in tool_vocab:
                     for ta in actor["actor"].split(","):
@@ -204,7 +209,7 @@ def add_tools(client: act.api.Act, ta_cards: List, tools: List, output_format: T
                 continue
 
             fact = client.fact("alias") \
-                                .bidirectional("tool", tool1, "tool", tool2)
+                         .bidirectional("tool", tool1, "tool", tool2)
             handle_fact(fact)
 
 
@@ -225,10 +230,11 @@ def main() -> None:
     tools = worker.fetch_json(THAICERT_TOOLS_URL, args.proxy_string, args.http_timeout)
     add_tools(actapi, ta_cards["values"], tools["values"])
 
+
 def main_log_error() -> None:
     "Main function wrapper. Log all exceptions to error"
     try:
-       main()
+        main()
     except Exception:
         error("Unhandled exception: {}".format(traceback.format_exc()))
         raise
