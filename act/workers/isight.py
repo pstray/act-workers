@@ -21,10 +21,6 @@ requirements:
 """
 
 
-from functools import partialmethod
-from logging import error
-from typing import Generator, Text, Dict
-
 import argparse
 import contextlib
 import datetime
@@ -34,17 +30,20 @@ import hmac
 import json
 import logging
 import os
-import requests
 import socket
 import time
 import traceback
 import warnings
+from functools import partialmethod
+from logging import error
+from typing import Dict, Generator, Text
 
 import act.api
-from act.api.helpers import handle_fact, handle_uri
-from act.types.format import ValidationError, format_threat_actor, format_tool
-from act.workers.libs import worker
+import requests
+from act.api.helpers import handle_fact, handle_facts, handle_uri
 from act.api.libs import cli
+
+from act.workers.libs import worker
 
 
 def parseargs() -> argparse.ArgumentParser:
@@ -161,14 +160,11 @@ def main() -> None:
                 .source("report", reportID)
                 .destination("uri", dp["url"])
             )
-            try:
-                handle_uri(actapi, dp["url"])
-            except act.api.base.ValidationError as err:
-                logging.error("%s while storing url from mentions [%s]", err, dp["url"])
+            handle_uri(actapi, dp["url"])
         ### --- IP -> malwareFamily
         if dp["malwareFamily"] and dp["ip"]:
-            try:
-                chain = act.api.fact.fact_chain(
+            handle_facts(
+                act.api.fact.fact_chain(
                     actapi.fact("connectsTo")
                     .source("content", "*")
                     .destination("uri", "*"),
@@ -177,37 +173,26 @@ def main() -> None:
                     .destination("uri", "*"),
                     actapi.fact("classifiedAs")
                     .source("content", "*")
-                    .destination("tool", format_tool(dp["malwareFamily"])),
+                    .destination("tool", dp["malwareFamily"]),
                 )
-            except ValidationError as e:
-                error(str(e))
-                continue
-            for fact in chain:
-                handle_fact(fact)
+            )
         ### --- URL -> malwareFamily
         elif dp["networkType"] == "url" and dp["malwareFamily"]:
-            try:
-                handle_uri(actapi, dp["url"])
-            except act.api.base.ValidationError as err:
-                logging.error("%s while storing url from mentions [%s]", err, dp["url"])
-
-            try:
-                chain = act.api.fact.fact_chain(
+            handle_uri(actapi, dp["url"])
+            handle_facts(
+                act.api.fact.fact_chain(
                     actapi.fact("connectsTo")
                     .source("content", "*")
                     .destination("uri", dp["url"]),
                     actapi.fact("classifiedAs")
                     .source("content", "*")
-                    .destination("tool", format_tool(dp["malwareFamily"])),
+                    .destination("tool", dp["malwareFamily"]),
                 )
-                for fact in chain:
-                    handle_fact(fact)
-            except ValidationError as e:
-                error(str(e))
+            )
         ### --- FQDN -> malwareFamily
         elif dp["networkType"] == "network" and dp["domain"] and dp["malwareFamily"]:
-            try:
-                chain = act.api.fact.fact_chain(
+            handle_facts(
+                act.api.fact.fact_chain(
                     actapi.fact("connectsTo")
                     .source("content", "*")
                     .destination("uri", "*"),
@@ -216,12 +201,9 @@ def main() -> None:
                     .destination("uri", "*"),
                     actapi.fact("classifiedAs")
                     .source("content", "*")
-                    .destination("tool", format_tool(dp["malwareFamily"])),
+                    .destination("tool", dp["malwareFamily"]),
                 )
-                for fact in chain:
-                    handle_fact(fact)
-            except ValidationError as e:
-                error(str(e))
+            )
         ### --- hash -> malwareFamily
         elif (
             dp["fileType"]
@@ -233,29 +215,23 @@ def main() -> None:
                 ### so we need to make a chain through a placeholder content
                 if not dp["sha256"]:
                     if dp[digest_type]:
-                        try:
-                            chain = act.api.fact.fact_chain(
+                        handle_facts(
+                            act.api.fact.fact_chain(
                                 actapi.fact("represents")
                                 .source("hash", dp[digest_type])
                                 .destination("content", "*"),
                                 actapi.fact("classifiedAs")
                                 .source("content", "*")
-                                .destination("tool", format_tool(dp["malwareFamily"])),
+                                .destination("tool", dp["malwareFamily"]),
                             )
-                            for fact in chain:
-                                handle_fact(fact)
-                        except ValidationError as e:
-                            error(str(e))
+                        )
                 else:  ## There is a sha256, so we do _not_ need a chain
                     if dp[digest_type]:
-                        try:
-                            handle_fact(
-                                actapi.fact("classifiedAs")
-                                .source("content", dp["sha256"])
-                                .destination("tool", format_tool(dp["malwareFamily"]))
-                            )
-                        except ValidationError as e:
-                            error(str(e))
+                        handle_fact(
+                            actapi.fact("classifiedAs")
+                            .source("content", dp["sha256"])
+                            .destination("tool", dp["malwareFamily"])
+                        )
 
                         handle_fact(
                             actapi.fact("represents")
@@ -272,8 +248,8 @@ def main() -> None:
                 ### so we need to make a chain through a placeholder content
                 if not dp["sha256"]:
                     if dp[digest_type]:
-                        try:
-                            chain = act.api.fact.fact_chain(
+                        handle_facts(
+                            act.api.fact.fact_chain(
                                 actapi.fact("represents")
                                 .source("hash", dp[digest_type])
                                 .destination("content", "*"),
@@ -282,15 +258,9 @@ def main() -> None:
                                 .destination("incident", "*"),
                                 actapi.fact("attributedTo")
                                 .source("incident", "*")
-                                .destination(
-                                    "threatActor", format_threat_actor(dp["actor"])
-                                ),
+                                .destination("threatActor", dp["actor"]),
                             )
-                        except ValidationError as e:
-                            error(str(e))
-                            continue
-                        for fact in chain:
-                            handle_fact(fact)
+                        )
                 else:  ## There is a sha256, so we do _not_ need a chain between all the way from hexdigest
                     if dp[digest_type]:
                         handle_fact(
@@ -299,22 +269,16 @@ def main() -> None:
                             .destination("content", dp["sha256"])
                         )
 
-                        try:
-                            chain = act.api.fact.fact_chain(
+                        handle_facts(
+                            act.api.fact.fact_chain(
                                 actapi.fact("observedIn")
                                 .source("content", dp["sha256"])
                                 .destination("incident", "*"),
                                 actapi.fact("attributedTo")
                                 .source("incident", "*")
-                                .destination(
-                                    "threatActor", format_threat_actor(dp["actor"])
-                                ),
+                                .destination("threatActor", dp["actor"]),
                             )
-                        except ValidationError as e:
-                            error(str(e))
-                            continue
-                        for fact in chain:
-                            handle_fact(fact)
+                        )
         ### We do have a sha256 of a file (but possibly nothing else). Add the content to hexdigest facts
         elif dp["fileType"] and dp["sha256"]:
             for digest in ["sha1", "md5", "sha256"]:

@@ -15,10 +15,9 @@ from logging import error
 from typing import Dict, List, Text
 
 import act.api
-from act.api.helpers import Act, handle_fact
+from act.api.helpers import Act, handle_facts
 from pyattck import Attck
 
-from act.types.format import ValidationError, format_threat_actor, format_tool
 from act.workers import worker_config
 from act.workers.libs import worker
 from act.api.libs import cli
@@ -218,21 +217,16 @@ def add_ta_techniques(
     """Threat Actor Techniques"""
 
     for technique in techniques:
-        try:
-            chain = act.api.fact.fact_chain(
+        handle_facts(
+            act.api.fact.fact_chain(
                 client.fact("attributedTo")
                 .source("incident", "*")
-                .destination("threatActor", format_threat_actor(threat_actor)),
+                .destination("threatActor", threat_actor),
                 client.fact("observedIn")
                 .source("technique", technique)
                 .destination("incident", "*"),
-            )
-        except ValidationError as e:
-            error(str(e))
-            continue
-
-        for fact in chain:
-            handle_fact(fact, output_format=output_format)
+            ), 
+            output_format=output_format)
 
 
 def add_ta_tools(
@@ -241,24 +235,19 @@ def add_ta_tools(
     """Threat Actor Tools"""
 
     for tool in tools:
-        try:
-            chain = act.api.fact.fact_chain(
+        handle_facts(
+            act.api.fact.fact_chain(
                 client.fact("classifiedAs")
                 .source("content", "*")
-                .destination("tool", format_tool(tool)),
+                .destination("tool", tool),
                 client.fact("observedIn")
                 .source("content", "*")
                 .destination("incident", "*"),
                 client.fact("attributedTo")
                 .source("incident", "*")
-                .destination("threatActor", format_threat_actor(threat_actor)),
-            )
-        except ValidationError as e:
-            error(str(e))
-            continue
-
-        for fact in chain:
-            handle_fact(fact, output_format=output_format)
+                .destination("threatActor", threat_actor),
+            ), 
+            output_format=output_format)
 
 
 def add_ta_sectors(
@@ -266,8 +255,8 @@ def add_ta_sectors(
 ) -> None:
     """Threat Actor Sectors"""
     for sector in sectors:
-        try:
-            chain = act.api.fact.fact_chain(
+        handle_facts(
+            act.api.fact.fact_chain(
                 client.fact("targets")
                 .source("incident", "*")
                 .destination("organization", "*"),
@@ -276,14 +265,9 @@ def add_ta_sectors(
                 .destination("sector", sector),
                 client.fact("attributedTo")
                 .source("incident", "*")
-                .destination("threatActor", format_threat_actor(threat_actor)),
-            )
-        except ValidationError as e:
-            error(str(e))
-            continue
-
-        for fact in chain:
-            handle_fact(fact, output_format=output_format)
+                .destination("threatActor", threat_actor),
+            ), 
+            output_format=output_format)
 
 
 def add_ta_target_country(
@@ -291,8 +275,8 @@ def add_ta_target_country(
 ) -> None:
     """Threat actor target countries"""
     for target_country in target_countries:
-        try:
-            chain = act.api.fact.fact_chain(
+        handle_facts(
+            act.api.fact.fact_chain(
                 client.fact("targets")
                 .source("incident", "*")
                 .destination("organization", "*"),
@@ -301,56 +285,38 @@ def add_ta_target_country(
                 .destination("country", target_country),
                 client.fact("attributedTo")
                 .source("incident", "*")
-                .destination("threatActor", format_threat_actor(threat_actor)),
-            )
-        except ValidationError as e:
-            error(str(e))
-            continue
-
-        for fact in chain:
-            handle_fact(fact, output_format=output_format)
+                .destination("threatActor", threat_actor),
+        ), output_format=output_format)
 
 
 def add_ta_located_in(
     client: Act, output_format: Text, threat_actor: Text, located_in: Text
 ) -> None:
     """Threat actor located in"""
-    try:
-        chain = act.api.fact.fact_chain(
+    handle_facts(
+        act.api.fact.fact_chain(
             client.fact("locatedIn")
             .source("organization", "*")
             .destination("country", located_in),
             client.fact("attributedTo")
-            .source("threatActor", format_threat_actor(threat_actor))
+            .source("threatActor", threat_actor)
             .destination("organization", "*"),
-        )
-    except ValidationError as e:
-        error(str(e))
-        return
-
-    for fact in chain:
-        handle_fact(fact, output_format=output_format)
+        ), output_format=output_format)
 
 
 def add_ta_campaign(
     client: Act, output_format: Text, threat_actor: Text, campaign: Text
 ) -> None:
     """Threat Actor Campaign"""
-    try:
-        chain = act.api.fact.fact_chain(
+    handle_facts(
+        act.api.fact.fact_chain(
             client.fact("attributedTo")
             .source("incident", "*")
             .destination("campaign", campaign),
             client.fact("attributedTo")
             .source("incident", "*")
-            .destination("threatActor", format_threat_actor(threat_actor)),
-        )
-    except ValidationError as e:
-        error(str(e))
-        return
-
-    for fact in chain:
-        handle_fact(fact, output_format=output_format)
+            .destination("threatActor", threat_actor),
+        ), output_format=output_format)
 
 
 def main() -> None:
