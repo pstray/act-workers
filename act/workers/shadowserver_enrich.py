@@ -12,6 +12,7 @@ from urllib.parse import urljoin
 import act.api
 import requests
 from act.api.libs import cli
+
 from act.workers.libs import worker
 
 BASEURL = "https://transform.shadowserver.org/api2/"
@@ -45,7 +46,10 @@ def parseargs() -> argparse.ArgumentParser:
 
 
 def query_shadowserver(
-    endpoint: Text, request: Dict, secret: Text, proxies: Dict = None,
+    endpoint: Text,
+    request: Dict,
+    secret: Text,
+    proxies: Dict = None,
 ) -> Dict:
 
     url = urljoin(BASEURL, endpoint)
@@ -54,10 +58,15 @@ def query_shadowserver(
     request_bytes = bytes(request_string, "latin-1")
     hmac_generator = hmac.new(secret_bytes, request_bytes, hashlib.sha256)
     hmac2 = hmac_generator.hexdigest()
-    response = requests.post(url=url, json=request, headers={"HMAC2": hmac2})
+    response = requests.post(
+        url=url, json=request, proxies=proxies, headers={"HMAC2": hmac2}
+    )
 
     if response.status_code == requests.codes.ok:
-        return dict(results=response.json(), response_code=response.status_code,)
+        return dict(
+            results=response.json(),
+            response_code=response.status_code,
+        )
     else:
         return dict(
             error=response.text,
@@ -69,7 +78,7 @@ def query_shadowserver(
 def name_extraction(
     actapi: act.api.Act, signature: Text, content_id: Text, output_format: Text = "json"
 ) -> None:
-    """ Submit if AV vendor is Microsoft """
+    """Submit if AV vendor is Microsoft"""
     match = MS_RE.match(signature)
 
     if match:
