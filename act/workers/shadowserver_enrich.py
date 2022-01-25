@@ -167,6 +167,10 @@ def handle_domain(
         logging.error(f"Error handling: {ioc}. Error: {response['error']}")
         sys.exit(1)
 
+    if not "family" in results:
+        logging.warning(f"No family in results: {results}")
+        return
+
     if isinstance(results["family"], str):
         results["family"] = [results["family"]]
 
